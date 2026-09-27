@@ -11,6 +11,8 @@ public final class ClusterClient {
     private final BootstrapRemote bootstrap;
     public ClusterClient(BootstrapRemote bootstrap) { this.bootstrap = bootstrap; }
     public static ClusterClient connect(String host, int port) throws RemoteException, NotBoundException {
+        // RMI treats null/empty hosts as localhost; require an explicit destination.
+        if (host == null || host.isBlank()) throw new IllegalArgumentException("Bootstrap host is required");
         return new ClusterClient((BootstrapRemote) LocateRegistry.getRegistry(host, port).lookup("bootstrap"));
     }
     public BigInteger submit(Job job) throws RemoteException, InterruptedException {
