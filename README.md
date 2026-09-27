@@ -150,6 +150,8 @@ Each click creates an independent task row; submit more tasks while previous
 ones run. File reads and RMI calls run off the Swing event thread. Launch this
 command again in a separate terminal to demonstrate a second client process.
 The result table reports each task's completion or error independently.
+Enter an explicit bootstrap host (for example, `127.0.0.1` for a local cluster).
+A blank host reports `Bootstrap host is required` instead of connecting locally.
 
 For a checked concurrent demo, run this command in two terminals:
 
@@ -174,7 +176,7 @@ chunks do not guarantee equal CPU time, and very large ranges can take a long ti
 
 ## Verification and remaining integration
 
-`mvn clean verify -Pintegration` runs 25 unit/RMI tests for calculations, parsing,
+`mvn clean verify -Pintegration` runs 26 unit/RMI tests for calculations, parsing,
 retry classification, membership, worker runtime and coordination, plus one
 separate-JVM bootstrap/four-worker/two-client integration test. The latter checks
 24 results across all job types, leader rotation/agreement and 72 allocations to
