@@ -36,3 +36,22 @@ to other workers, separately from the five admitted client jobs per term. Verifi
 `mvn clean verify -Pintegration` passed 17 unit/RMI tests and 1 separate-process
 integration test, with no failures, errors or skips. Commit author: Maanav Kumar.
 Member 3 calculations, CSV and GUI remain outside this contribution.
+
+## Area 3: calculations and clients
+
+Implemented by Codex at the user's request on feature/jobs-client after fetching
+origin and fast-forwarding origin/main (d688f0c). No reference implementation was
+read or copied. This is AI-assisted work, not a claim of independent student authorship.
+
+Adds a stateless registered JobEngine, MAX/PRIMESUM/PRIMECOUNT, balanced chunks,
+BigInteger aggregation, numeric UTF-8 CSV parsing, concurrent Swing submissions,
+safe pre-admission retry handling and a checked headless client. Shared API and
+WorkerNode production code are unchanged. Adds calculation/parser/retry tests and
+extends separate-process integration to two clients with 24 checked real jobs,
+leader rotation/agreement and JAC accounting.
+
+Verification: mvn clean verify -Pintegration passed 25 unit/RMI tests and one
+separate-process integration test, with no failures, errors or skips. Swing
+interaction and cross-machine networking still need a manual demo. Commits use
+Codex's agent identity; the user authorized the authenticated GitHub account for
+pushing and opening the PR. This does not attribute the work to that account owner.

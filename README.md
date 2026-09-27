@@ -7,8 +7,9 @@ Java 21, Maven, Java RMI, and JUnit 5. No runtime dependencies beyond the JDK.
 
 ## Current state
 
-Areas 1 and 2 now provide membership, worker runtime, election and job coordination.
-Calculations, CSV and clients still require Member 3's JobEngine provider.
+Areas 1 and 2 provide membership, worker runtime, election and job coordination.
+Area 3 now supplies the registered JobEngine provider, integer calculations,
+balanced splitting/aggregation, numeric CSV input, Swing GUI and checked concurrent client.
 See [Member 2 design and review guide](docs/ELECTION_COORDINATION.md) for protocol,
 tests, failure semantics and integration limits. Implementation was checked against the supplied `A1 cs324.txt` assignment
 specification; see the requirement mapping in the review guide.
@@ -57,7 +58,7 @@ Source root: `src/main/java/edu/usp/cs324/`.
 Coordinate contract changes before merging. Teammate 2 should implement election
 and coordinator behavior in WorkerNode without replacing membership/runtime code.
 Teammate 3 should avoid editing WorkerNode; its engine is loaded with ServiceLoader.
-The baseline contains no engine provider, calculation algorithms or GUI.
+The provider is included in the built JAR through its ServiceLoader registration.
 
 ## Teammate workflow
 
@@ -95,7 +96,7 @@ The intended final project must meet the assignment's complete requirements; thi
 development starting point deliberately does not claim that completion. Run full
 multi-client/election/job integration tests when both teammate branches are ready.
 
-## Run area 1 locally
+## Run the cluster locally
 
 After building, run each command in a separate terminal from this folder, starting
 bootstrap first and waiting for each readiness message. Ports and IDs are arguments.
@@ -125,16 +126,69 @@ java -Dsun.rmi.transport.tcp.responseTimeout=10000 -cp target/distrilab-team-1.0
 ```
 
 Status initially shows zero counters and `term=null`. The first `elect()` or
-`submit()` elects a coordinator. Submission requires Member 3's provider.
+`submit()` elects a coordinator. The included provider handles all three job types.
 Stop demo processes with Ctrl+C; use distinct ports if a prior demo is running.
+
+## Run clients
+
+After starting bootstrap and workers above, launch the GUI in another terminal:
+
+```powershell
+java -Dsun.rmi.transport.tcp.responseTimeout=10000 -cp target/distrilab-team-1.0.0.jar edu.usp.cs324.client.ClientGui 127.0.0.1 1099
+```
+
+Select MAX or PRIMECOUNT and enter comma/newline-separated signed integers, or
+select PRIMESUM and enter exactly `start,end` (both inclusive). Click **Submit
+entered data**, or **Submit CSV file...** to choose a UTF-8 file. CSV is headerless
+numeric data: commas separate cells, newlines separate rows, quoted integers and
+a UTF-8 BOM are accepted. Blank lines are ignored; empty cells, headers, decimals,
+malformed quotes and values outside the signed 32-bit range are rejected with an
+input error. MAX needs at least one value; empty PRIMECOUNT returns zero.
+For PRIMESUM, CSV must contain exactly two integers with start <= end.
+
+Each click creates an independent task row; submit more tasks while previous
+ones run. File reads and RMI calls run off the Swing event thread. Launch this
+command again in a separate terminal to demonstrate a second client process.
+The result table reports each task's completion or error independently.
+
+For a checked concurrent demo, run this command in two terminals:
+
+```powershell
+java -Dsun.rmi.transport.tcp.responseTimeout=10000 -cp target/distrilab-team-1.0.0.jar edu.usp.cs324.client.HeadlessClient 127.0.0.1 1099
+```
+
+Each process submits 12 concurrent jobs, checks MAX=42, PRIMESUM(1,1000)=76127
+and PRIMECOUNT=4, and exits unsuccessfully if any result is wrong. Clients retry
+only explicit pre-admission rejections during term rotation. Transport failures
+are reported without replay because accepted work may still be running.
+
+For multiple computers, replace loopback addresses with reachable host addresses
+in the bootstrap, worker and client commands. Allow the configured registry and
+export ports through the lab firewall. Each worker advertises its supplied host.
+
+Chunks contain equal numbers of elements (or range integers), differing by at
+most one, and retain list duplicates and inclusive range boundaries. Fewer items
+than workers produce fewer nonempty chunks. Empty PRIMECOUNT uses one empty
+chunk. Results use BigInteger; primality uses integer trial division. Equal-sized
+chunks do not guarantee equal CPU time, and very large ranges can take a long time.
 
 ## Verification and remaining integration
 
-`mvn clean verify -Pintegration` runs membership, worker runtime and coordination
-tests, plus a separate-JVM bootstrap/four-worker election test. Maven reports are
+`mvn clean verify -Pintegration` runs 25 unit/RMI tests for calculations, parsing,
+retry classification, membership, worker runtime and coordination, plus one
+separate-JVM bootstrap/four-worker/two-client integration test. The latter checks
+24 results across all job types, leader rotation/agreement and 72 allocations to
+other workers. Maven reports are
 in `target/surefire-reports/` and `target/failsafe-reports/`; process logs are in
 `target/membership-integration/`. Coordination tests use constant fixture chunks,
-not implementations of MAX, PRIMESUM or PRIMECOUNT.
+not implementations of MAX, PRIMESUM or PRIMECOUNT; the separate-process test uses
+the actual provider and checked clients.
+
+The automated suite does not exercise Swing mouse/keyboard interaction. Manually
+demonstrate file selection, invalid input feedback, concurrent task rows and two
+GUI processes. Cross-machine firewall/RMI configuration also requires a lab demo.
+Closing a GUI does not cancel already accepted remote work. RMI has no durable
+job receipt/resume protocol; a timeout leaves completion uncertain.
 
 Membership probes prune unreachable workers, but neighbour repair and transactional
 join rollback remain outside this change. Use stable membership on a trusted lab
