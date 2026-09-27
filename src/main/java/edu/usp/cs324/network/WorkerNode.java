@@ -85,7 +85,14 @@ public final class WorkerNode extends UnicastRemoteObject implements WorkerRemot
         // overlapping candidate snapshots from installing successive empty terms.
         if (!self.equals(initiator)) return initiator.connect().elect();
         synchronized (electionGate) {
+            // A newly joined gate may have no local term. Discover the newest
+            // cluster term before deciding whether another election is necessary.
             Term current = status().term();
+            for (Peer peer : members) {
+                Term observed = peer.connect().status().term();
+                if (observed != null && (current == null || compare(observed, current) > 0))
+                    current = observed;
+            }
             if (current != null && members.contains(current.leader())) {
                 Status leader = current.leader().connect().status();
                 if (current.equals(leader.term()) && leader.assignedJobs() < 5) {
@@ -93,11 +100,7 @@ public final class WorkerNode extends UnicastRemoteObject implements WorkerRemot
                     return current;
                 }
             }
-            long number = 0;
-            for (Peer peer : members) {
-                Term observed = peer.connect().status().term();
-                if (observed != null) number = Math.max(number, observed.number());
-            }
+            long number = current == null ? 0 : current.number();
             UUID id = UUID.randomUUID();
             Map<Integer, Candidate> candidates = new HashMap<>();
             // Flood neighbours first; membership also covers disconnected live components.

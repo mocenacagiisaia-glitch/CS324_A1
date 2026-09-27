@@ -209,4 +209,32 @@ class CoordinationTest {
         }
     }
 
+    @Test void lowerIdJoinMustPreserveAnActiveUnexhaustedTerm() throws Exception {
+        Term original = nodes.getFirst().elect();
+        nodes.getLast().assign(JOB, original, peers);
+        assertEquals(1, nodes.getLast().status().assignedJobs());
+        int port;
+        try (var socket = new ServerSocket(0)) { port = socket.getLocalPort(); }
+        var registry = LocateRegistry.createRegistry(port);
+        exported.add(registry);
+        Peer joining = new Peer(0, "localhost", port);
+        WorkerNode newcomer = new WorkerNode(joining, bootstrap, 0, fixture());
+        nodes.add(newcomer);
+        registry.rebind("worker", newcomer);
+        bootstrap.register(joining);
+        assertNull(newcomer.status().term());
+        Term afterJoin = joining.connect().elect();
+        assertEquals(original, afterJoin,
+                "A healthy coordinator with only one assigned job must keep its term after a join");
+        for (WorkerNode node : nodes) assertEquals(original, node.status().term());
+        assertEquals(1, nodes.get(2).status().assignedJobs());
+        assertEquals(2, nodes.get(2).status().jac());
+        // Reuse must preserve the remaining four slots, then rotate normally.
+        for (int i = 0; i < 4; i++) nodes.get(2).assign(JOB, original, peers);
+        Term rotated = joining.connect().elect();
+        assertEquals(original.number() + 1, rotated.number());
+        assertEquals(2, rotated.leader().id());
+        assertEquals(10, nodes.get(2).status().jac());
+        for (WorkerNode node : nodes) assertEquals(rotated, node.status().term());
+    }
 }

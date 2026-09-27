@@ -9,8 +9,17 @@ JAC wins, breaking ties by highest worker ID. Bootstrap supplies membership only
 
 The lowest-ID active worker serializes election initiation with a dedicated gate.
 This gate is separate from the short-lived state monitor and is never acquired by
-ELECTION or COORDINATOR handlers. Concurrent elect calls reuse a usable term rather
-than resetting its budget. The assignment permits a custom algorithm. Any worker can request an election;
+ELECTION or COORDINATOR handlers. While holding this gate, elect reads active
+workers' status and discovers the newest term by number and UUID, even when its
+own local term is null. It rechecks that term's active leader and reuses the term
+only if the leader still reports the same term with fewer than five admitted jobs.
+COORDINATOR propagation then adopts that term on the joining worker; existing
+workers ignore the duplicate, preserving their counters and remaining job slots.
+An exhausted or unavailable leader instead triggers election above the newest
+observed term number. Status-call failures propagate for a later retry rather than
+being treated as evidence that no coordinator exists.
+
+The assignment permits a custom algorithm. Any worker can request an election;
 serialization and winner selection remain entirely on workers, not bootstrap.
 
 Terms compare by increasing number, then UUID. Duplicate/stale announcements do
@@ -77,7 +86,11 @@ checks duplicate messages, stale announcements, simultaneous elections, 20
 concurrent attempts sharing one term (exactly five admitted), lowest-JAC rotation,
 stale admission rejection, submission forwarding, unchanged counters after a
 duplicate coordinator, split failures without allocation, unknown remote completion, interruption draining, failed-leader replacement with stale neighbour links, and
-rotation while fifth-job computation is still running. Membership and runtime regression assertions remain.
+rotation while fifth-job computation is still running. A join regression admits
+one job under worker 3, registers worker 0 with a null term, and verifies that
+remote elect preserves the exact term, leader and counters across every worker.
+It then admits the remaining four jobs and verifies normal five-job rotation.
+Membership and runtime regression assertions remain.
 MembershipIT starts bootstrap plus four worker JVMs and verifies election of ID 4
 and agreement on the term over real interprocess RMI.
 
