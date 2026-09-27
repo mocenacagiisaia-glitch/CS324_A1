@@ -7,11 +7,11 @@ Java 21, Maven, Java RMI, and JUnit 5. No runtime dependencies beyond the JDK.
 
 ## Current state
 
-Area 1 is implemented: bootstrap membership, registration, random reciprocal
-neighbours, worker processes, RMI status and provider-based concurrent chunk
-execution. Election, leadership/JAC, job admission/dispatch, actual calculations,
-CSV and clients remain unimplemented for teammates 2 and 3. This is not a complete
-assignment solution. A successful build verifies only the included area 1 scope.
+Areas 1 and 2 now provide membership, worker runtime, election and job coordination.
+Calculations, CSV and clients still require Member 3's JobEngine provider.
+See [Member 2 design and review guide](docs/ELECTION_COORDINATION.md) for protocol,
+tests, failure semantics and integration limits. Implementation was checked against the supplied `A1 cs324.txt` assignment
+specification; see the requirement mapping in the review guide.
 
 ```powershell
 java -version
@@ -124,35 +124,23 @@ java -Dsun.rmi.transport.tcp.responseTimeout=10000 -cp target/distrilab-team-1.0
 java -Dsun.rmi.transport.tcp.responseTimeout=10000 -cp target/distrilab-team-1.0.0.jar edu.usp.cs324.network.ClusterStatus 127.0.0.1 1099
 ```
 
-Status shows neighbours, zero counters and `term=null`; these are honest initial
-values, not an implemented leader election. Calling election/submission/assignment
-returns an explicit unimplemented error. Compute requires teammate 3's provider;
-only test fixtures supply a constant-returning provider at this milestone.
-Stop demo processes with Ctrl+C. Use distinct ports if a prior demo is running.
+Status initially shows zero counters and `term=null`. The first `elect()` or
+`submit()` elects a coordinator. Submission requires Member 3's provider.
+Stop demo processes with Ctrl+C; use distinct ports if a prior demo is running.
 
-## Area 1 tests and remaining integration work
+## Verification and remaining integration
 
-`mvn test` runs MembershipTest and WorkerRuntimeTest. They check connected reciprocal
-joins, concurrent duplicate-ID registration, active-worker pruning, neighbour
-deduplication/self exclusion, honest unfinished-feature errors, overlapping worker
-tasks, interrupted-task draining/interrupt restoration, and computation errors.
-`mvn verify -Pintegration` also starts bootstrap, four workers and a status command
-in separate JVMs, verifies membership over RMI, then stops those child processes.
-Logs are in `target/membership-integration/`; Maven reports are in
-`target/surefire-reports/` and `target/failsafe-reports/`.
+`mvn clean verify -Pintegration` runs membership, worker runtime and coordination
+tests, plus a separate-JVM bootstrap/four-worker election test. Maven reports are
+in `target/surefire-reports/` and `target/failsafe-reports/`; process logs are in
+`target/membership-integration/`. Coordination tests use constant fixture chunks,
+not implementations of MAX, PRIMESUM or PRIMECOUNT.
 
-Teammate 2 must update the tests that currently assert null terms or unimplemented
-election/submission behavior when implementing those features. Preserve membership
-and runtime assertions. Teammate 3 supplies real algorithm/provider tests; runtime
-fixture outputs are not tests of MAX/PRIMESUM/PRIMECOUNT.
-
-Membership probes remove unreachable workers from the bootstrap directory, but
-neighbour repair and transactional rollback of failed reciprocal joins are not
-implemented. Bootstrap holds a monitor while probing RMI endpoints; a slow peer
-can delay registration. Test with stable membership on a trusted lab network.
-Future coordinator code must account for RMI timeouts: a returned/failed call is
-not proof that remote work stopped. Interruption of compute waits for the started
-task before reporting failure. This is not durable recovery or partition consensus.
+Membership probes prune unreachable workers, but neighbour repair and transactional
+join rollback remain outside this change. Use stable membership on a trusted lab
+network. Election propagation skips failed neighbour links and checks that all active
+members supplied candidates before choosing a winner.
+This implementation is not durable recovery or network-partition consensus.
 
 ## Reference and contribution policy
 

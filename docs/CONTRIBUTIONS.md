@@ -23,3 +23,16 @@ and 1 separate-process membership test, with no failures, errors or skips.
 The initial skeleton built with no tests; that milestone did not claim feature
 completion. Election, coordinator dispatch, algorithms, CSV and clients have not
 been implemented or verified in this repository.
+
+## Member 2: election and coordination
+
+Election and coordination were implemented with Codex assistance in
+feature/election-coordination, building on the supplied runtime and public API.
+No completed reference implementation was read or copied for this work.
+See ELECTION_COORDINATION.md for implementation decisions and integration limits.
+
+Reviewed against the user-supplied A1 cs324.txt specification. JAC counts allocations
+to other workers, separately from the five admitted client jobs per term. Verification:
+`mvn clean verify -Pintegration` passed 17 unit/RMI tests and 1 separate-process
+integration test, with no failures, errors or skips. Commit author: Maanav Kumar.
+Member 3 calculations, CSV and GUI remain outside this contribution.
