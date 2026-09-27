@@ -10,7 +10,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Area 1 only: real JVMs prove registration/status transport, not elections/jobs. */
+/** Real JVMs verify membership and election transport; job fixtures run in CoordinationTest. */
 class MembershipIT {
     private final List<Process> processes = new ArrayList<>();
     private final Set<Integer> allocatedPorts = new HashSet<>();
@@ -49,7 +49,7 @@ class MembershipIT {
     }
 
     @Test @Timeout(90)
-    void bootstrapAndFourWorkerProcessesExposeMembershipWithoutImplementedFeatures() throws Exception {
+    void bootstrapAndFourWorkerProcessesElectCoordinator() throws Exception {
         Files.createDirectories(logs);
         try {
             int bootstrapPort = port();
@@ -82,12 +82,14 @@ class MembershipIT {
             }
             assertEquals(new HashSet<>(members), reached);
             assertEquals(6, edges);
-            assertThrows(java.rmi.RemoteException.class, () -> members.getFirst().connect().elect());
+            Term elected = members.getFirst().connect().elect();
+            assertEquals(4, elected.leader().id());
+            for (Peer peer : members) assertEquals(elected, peer.connect().status().term());
             Process status = start("status.log", "edu.usp.cs324.network.ClusterStatus", "127.0.0.1", "" + bootstrapPort);
             assertTrue(status.waitFor(10, TimeUnit.SECONDS));
             assertEquals(0, status.exitValue());
             assertEquals(4, Files.readAllLines(logs.resolve("status.log")).size());
-            Files.writeString(logs.resolve("summary.txt"), "PASS: bootstrap + 4 workers + status process; connected reciprocal membership; no election implementation.\n");
+            Files.writeString(logs.resolve("summary.txt"), "PASS: bootstrap + 4 workers + status process; connected reciprocal membership; coordinator election and propagation.\n");
         } finally {
             for (Process process : processes.reversed()) {
                 process.destroy();

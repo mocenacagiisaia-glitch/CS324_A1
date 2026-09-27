@@ -8,13 +8,20 @@ import java.rmi.server.UnicastRemoteObject;
 import java.util.*;
 import java.util.concurrent.*;
 
-/** Area 1 runtime only. Teammate 2 implements the explicitly marked protocol methods. */
+/** Membership, election and coordinator runtime; calculations are supplied by JobEngine. */
 public final class WorkerNode extends UnicastRemoteObject implements WorkerRemote, AutoCloseable {
     private final Peer self;
     private final BootstrapRemote bootstrap;
     private final Map<Integer, Peer> neighbours = new ConcurrentSkipListMap<>();
     private final ExecutorService execution = Executors.newVirtualThreadPerTaskExecutor();
     private final JobEngine engine;
+    // Never hold the state monitor across an RMI call: propagation can return via a cycle.
+    private final Object electionGate = new Object();
+    private final Set<UUID> seenElections = new HashSet<>();
+    private Term term;
+    private long jac;
+    private int assignedJobs;
+
 
     public WorkerNode(Peer self, BootstrapRemote bootstrap, int exportPort, JobEngine engine)
             throws RemoteException {
@@ -25,24 +32,172 @@ public final class WorkerNode extends UnicastRemoteObject implements WorkerRemot
     }
 
     @Override public synchronized Status status() {
-        // No leader/JAC implementation yet. Teammate 2 must replace these initial values.
-        return new Status(self, 0, 0, null, List.copyOf(neighbours.values()));
+        return new Status(self, jac, assignedJobs, term, List.copyOf(neighbours.values()));
     }
 
     @Override public void addNeighbour(Peer peer) {
         if (peer.id() != self.id()) neighbours.put(peer.id(), peer);
     }
 
-    private static RemoteException pendingCoordination() {
-        return new RemoteException("Not implemented: teammate 2 election and coordination area");
+    @Override public List<Candidate> election(UUID id) throws RemoteException {
+        Objects.requireNonNull(id, "Election ID");
+        List<Candidate> candidates = new ArrayList<>();
+        synchronized (this) {
+            if (seenElections.contains(id)) return List.of();
+            // Retain IDs for process lifetime: eviction could resurrect a delayed message.
+            if (seenElections.size() >= 100_000) throw new RemoteException("Election history capacity reached");
+            seenElections.add(id);
+            candidates.add(new Candidate(self, jac));
+        }
+        for (Peer peer : neighbours.values()) {
+            try { candidates.addAll(peer.connect().election(id)); }
+            catch (RemoteException e) { System.err.println("Election link unavailable: " + peer.id()); }
+        }
+        return List.copyOf(candidates);
     }
 
-    @Override public List<Candidate> election(UUID id) throws RemoteException { throw pendingCoordination(); }
-    @Override public void coordinator(Term term) throws RemoteException { throw pendingCoordination(); }
-    @Override public Term elect() throws RemoteException { throw pendingCoordination(); }
-    @Override public BigInteger submit(Job job) throws RemoteException { throw pendingCoordination(); }
-    @Override public BigInteger assign(Job job, Term term, List<Peer> workers) throws RemoteException {
-        throw pendingCoordination();
+    private static int compare(Term a, Term b) {
+        int number = Long.compare(a.number(), b.number());
+        return number != 0 ? number : a.electionId().compareTo(b.electionId());
+    }
+
+    @Override public void coordinator(Term incoming) throws RemoteException {
+        Objects.requireNonNull(incoming, "Term");
+        Objects.requireNonNull(incoming.electionId(), "Election ID");
+        Objects.requireNonNull(incoming.leader(), "Leader");
+        if (incoming.number() <= 0) throw new RemoteException("Term number must be positive");
+        synchronized (this) {
+            if (term != null && compare(incoming, term) <= 0) return;
+            term = incoming;
+            assignedJobs = 0;
+        }
+        for (Peer peer : neighbours.values()) {
+            try { peer.connect().coordinator(incoming); }
+            catch (RemoteException e) { System.err.println("Coordinator link unavailable: " + peer.id()); }
+        }
+    }
+
+    @Override public Term elect() throws RemoteException {
+        List<Peer> members = bootstrap.active();
+        Peer initiator = members.stream().min(Comparator.comparingInt(Peer::id))
+                .orElseThrow(() -> new RemoteException("No active workers"));
+        // One worker serializes election attempts, not the bootstrap. This prevents
+        // overlapping candidate snapshots from installing successive empty terms.
+        if (!self.equals(initiator)) return initiator.connect().elect();
+        synchronized (electionGate) {
+            Term current = status().term();
+            if (current != null && members.contains(current.leader())) {
+                Status leader = current.leader().connect().status();
+                if (current.equals(leader.term()) && leader.assignedJobs() < 5) {
+                    for (Peer peer : members) peer.connect().coordinator(current);
+                    return current;
+                }
+            }
+            long number = 0;
+            for (Peer peer : members) {
+                Term observed = peer.connect().status().term();
+                if (observed != null) number = Math.max(number, observed.number());
+            }
+            UUID id = UUID.randomUUID();
+            Map<Integer, Candidate> candidates = new HashMap<>();
+            // Flood neighbours first; membership also covers disconnected live components.
+            for (Peer peer : members) {
+                for (Candidate candidate : peer.connect().election(id)) {
+                    if (members.contains(candidate.peer())) candidates.put(candidate.peer().id(), candidate);
+                }
+            }
+            if (candidates.size() != members.size())
+                throw new RemoteException("Incomplete election response; retry with a new election ID");
+            Candidate winner = candidates.values().stream().min(
+                    Comparator.comparingLong(Candidate::jac)
+                            .thenComparing(Comparator.comparingInt((Candidate c) -> c.peer().id()).reversed()))
+                    .orElseThrow(() -> new RemoteException("No election candidates"));
+            Term elected = new Term(Math.incrementExact(number), id, winner.peer());
+            for (Peer peer : members) peer.connect().coordinator(elected);
+            return elected;
+        }
+    }
+
+    @Override public BigInteger submit(Job job) throws RemoteException {
+        Objects.requireNonNull(job, "Job");
+        Term elected = elect();
+        // Do not retry an RMI failure: the leader may already have admitted this job.
+        return elected.leader().connect().assign(job, elected, bootstrap.active());
+    }
+
+    @Override public BigInteger assign(Job job, Term expected, List<Peer> workers) throws RemoteException {
+        Objects.requireNonNull(job, "Job");
+        List<Peer> targets = List.copyOf(workers);
+        if (targets.isEmpty() || new HashSet<>(targets).size() != targets.size())
+            throw new RetryException("Worker list must be nonempty and unique");
+        List<Job> parts;
+        if (engine == null) throw new RetryException("JobEngine provider is not installed");
+        try {
+            parts = List.copyOf(engine.split(job, targets.size()));
+            if (parts.isEmpty() || parts.size() > targets.size())
+                throw new IllegalArgumentException("Engine must return 1..workerCount chunks");
+        } catch (RuntimeException e) {
+            throw new JobFailedException("Splitting failed; no work was admitted or started", e);
+        }
+        synchronized (this) {
+            if (term == null || !term.equals(expected) || !self.equals(term.leader()) || assignedJobs >= 5)
+                throw new RetryException("Stale term, wrong coordinator, or five-job limit reached");
+            // Count allocations to OTHER workers, not client submissions or local chunks.
+            long allocations = targets.subList(0, parts.size()).stream()
+                    .filter(peer -> !peer.equals(self)).count();
+            jac = Math.addExact(jac, allocations);
+            assignedJobs++;
+        }
+        // Everything below is post-admission: no failure here may signal RetryException.
+        BigInteger result;
+        try {
+            List<Future<BigInteger>> tasks = new ArrayList<>();
+            Throwable failure = null;
+            boolean interrupted = false;
+            boolean uncertain = false;
+            List<BigInteger> results = new ArrayList<>();
+            try {
+                for (int i = 0; i < parts.size(); i++) {
+                    Peer peer = targets.get(i);
+                    Job part = parts.get(i);
+                    try { tasks.add(execution.submit(() -> peer.connect().compute(part))); }
+                    catch (RuntimeException e) { failure = e; break; }
+                }
+                // The term ends on allocation, not on completion of a slow fifth job.
+                rotateIfExhausted();
+                for (Future<BigInteger> task : tasks) {
+                    for (;;) {
+                        try { results.add(task.get()); break; }
+                        catch (InterruptedException e) { interrupted = true; failure = e; }
+                        catch (ExecutionException e) {
+                            failure = e.getCause();
+                            // Conservatively treat remote errors as unknown completion.
+                            uncertain |= failure instanceof RemoteException;
+                            break;
+                        }
+                    }
+                }
+            } finally {
+                if (interrupted) Thread.currentThread().interrupt();
+            }
+            if (uncertain) throw new RemoteException("Accepted job failed; remote completion unknown; do not replay", failure);
+            if (failure != null) throw new JobFailedException("Accepted job failed; started calls drained", failure);
+            result = Objects.requireNonNull(engine.aggregate(job.type(), List.copyOf(results)), "Aggregate result");
+        } catch (RemoteException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new JobFailedException("Accepted job failed", e);
+        } finally {
+            rotateIfExhausted();
+        }
+        return result;
+    }
+
+    private void rotateIfExhausted() {
+        if (status().assignedJobs() >= 5) {
+            try { elect(); }
+            catch (RemoteException e) { System.err.println("Rotation pending: " + e.getMessage()); }
+        }
     }
 
     /** Executes one supplied chunk; splitting/algorithms belong to teammate 3's provider. */
@@ -86,6 +241,6 @@ public final class WorkerNode extends UnicastRemoteObject implements WorkerRemot
         LocateRegistry.createRegistry(self.registryPort()).rebind("worker", node);
         try { bootstrap.register(self); }
         catch (Exception e) { System.err.println("Startup failed: " + e); System.exit(1); }
-        System.out.println("WORKER READY " + self.id() + " (membership only; elections pending)");
+        System.out.println("WORKER READY " + self.id() + "");
     }
 }
