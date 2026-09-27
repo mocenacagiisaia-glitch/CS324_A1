@@ -104,13 +104,14 @@ class MembershipTest {
         assertEquals(List.of(second), first.connect().status().neighbours());
     }
 
-    @Test void unfinishedAreasFailExplicitlyInsteadOfReturningFakeResults() throws Exception {
+    @Test void missingEngineFailsExplicitlyInsteadOfReturningFakeResults() throws Exception {
         Peer peer = worker(1);
         var remote = peer.connect();
         Job job = new Job(Job.Type.PRIMECOUNT, List.of(2), 0, 0);
-        assertThrows(RemoteException.class, remote::elect);
-        assertThrows(RemoteException.class, () -> remote.election(UUID.randomUUID()));
-        assertThrows(RemoteException.class, () -> remote.coordinator(new Term(1, UUID.randomUUID(), peer)));
+        bootstrap.register(peer);
+        assertEquals(peer, remote.elect().leader());
+        assertEquals(1, remote.election(UUID.randomUUID()).size());
+
         assertThrows(RemoteException.class, () -> remote.submit(job));
         assertThrows(RemoteException.class, () -> remote.assign(job, null, List.of(peer)));
         assertThrows(RemoteException.class, () -> remote.compute(job));
