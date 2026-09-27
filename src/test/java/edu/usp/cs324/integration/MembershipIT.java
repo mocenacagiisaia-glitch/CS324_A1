@@ -10,7 +10,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Real JVMs verify membership and election transport; job fixtures run in CoordinationTest. */
+/** Real JVMs verify membership, election and concurrent checked clients with the real provider. */
 class MembershipIT {
     private final List<Process> processes = new ArrayList<>();
     private final Set<Integer> allocatedPorts = new HashSet<>();
@@ -89,7 +89,25 @@ class MembershipIT {
             assertTrue(status.waitFor(10, TimeUnit.SECONDS));
             assertEquals(0, status.exitValue());
             assertEquals(4, Files.readAllLines(logs.resolve("status.log")).size());
-            Files.writeString(logs.resolve("summary.txt"), "PASS: bootstrap + 4 workers + status process; connected reciprocal membership; coordinator election and propagation.\n");
+            Process clientA = start("client-a.log", "edu.usp.cs324.client.HeadlessClient", "127.0.0.1", "" + bootstrapPort);
+            Process clientB = start("client-b.log", "edu.usp.cs324.client.HeadlessClient", "127.0.0.1", "" + bootstrapPort);
+            for (Process client : List.of(clientA, clientB)) {
+                assertTrue(client.waitFor(45, TimeUnit.SECONDS), "Client timed out; inspect integration logs");
+                assertEquals(0, client.exitValue(), "Client failed; inspect integration logs");
+            }
+            assertEquals(12, Files.readAllLines(logs.resolve("client-a.log")).size());
+            assertEquals(12, Files.readAllLines(logs.resolve("client-b.log")).size());
+            Term finalTerm = members.getFirst().connect().status().term();
+            assertTrue(finalTerm.number() > elected.number());
+            long allocations = 0;
+            for (Peer peer : members) {
+                Status after = peer.connect().status();
+                assertEquals(finalTerm, after.term());
+                assertTrue(after.assignedJobs() <= 5);
+                allocations += after.jac();
+            }
+            assertEquals(72, allocations, "24 jobs each allocate to three other workers");
+            Files.writeString(logs.resolve("summary.txt"), "PASS: bootstrap + 4 workers + 2 concurrent client JVMs; 24 checked calculations; leader rotation, agreement and JAC accounting.\n");
         } finally {
             for (Process process : processes.reversed()) {
                 process.destroy();
