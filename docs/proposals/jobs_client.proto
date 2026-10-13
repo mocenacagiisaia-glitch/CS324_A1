@@ -1,0 +1,88 @@
+// PROPOSAL ONLY: not generated or used by application code until team agreement.
+syntax = "proto3";
+package distrilab.a2.proposal;
+option java_package = "edu.usp.cs324.protocol";
+option java_multiple_files = true;
+
+// Isaia implements discovery using the team's authoritative worker protocol.
+service CoordinatorDirectory {
+  rpc LocateCoordinator(LocateCoordinatorRequest) returns (CoordinatorEndpoint);
+}
+
+// Maanav implements admission, committed snapshots and streaming from recovered state.
+service JobService {
+  rpc SubmitJob(SubmitJobRequest) returns (JobSnapshot);
+  rpc LookupSubmission(LookupSubmissionRequest) returns (JobSnapshot);
+  rpc GetJob(GetJobRequest) returns (JobSnapshot);
+  rpc WatchJob(GetJobRequest) returns (stream JobSnapshot);
+}
+
+message LocateCoordinatorRequest {}
+message CoordinatorEndpoint {
+  int32 worker_id = 1;
+  string host = 2;
+  uint32 port = 3;
+  uint64 term_number = 4;
+  string term_id = 5;
+}
+
+enum JobType {
+  JOB_TYPE_UNSPECIFIED = 0;
+  MAX = 1;
+  PRIMESUM = 2;
+  PRIMECOUNT = 3;
+}
+message JobInput {
+  JobType type = 1;
+  repeated sint32 numbers = 2;
+  optional sint32 start = 3;
+  optional sint32 end = 4;
+}
+message SubmitJobRequest {
+  // Persisted before first send; retrying the SAME input/key returns the SAME ID.
+  string submission_key = 1;
+  JobInput input = 2;
+}
+message LookupSubmissionRequest { string submission_key = 1; }
+message GetJobRequest { string job_id = 1; }
+
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  ACCEPTED = 1;
+  RUNNING = 2;
+  COMPLETED = 3;
+  FAILED = 4;
+  TEMPORARILY_UNAVAILABLE = 5;
+}
+enum TaskState {
+  TASK_STATE_UNSPECIFIED = 0;
+  TASK_PENDING = 1;
+  TASK_RUNNING = 2;
+  TASK_COMPLETED = 3;
+  TASK_FAILED = 4;
+}
+message TaskSnapshot {
+  string task_id = 1;
+  uint64 attempt = 2;
+  optional int32 worker_id = 3;
+  TaskState state = 4;
+  uint64 total_units = 5;
+  uint64 completed_units = 6;
+  optional string result_decimal = 7;
+}
+message JobSnapshot {
+  string job_id = 1;
+  string submission_key = 2;
+  // Monotonic per job ACROSS coordinator changes; equal revision = equal content.
+  uint64 revision = 3;
+  JobState state = 4;
+  uint64 total_units = 5;
+  uint64 completed_units = 6;
+  // One current attempt per stable task ID; full replacement, never delta addition.
+  repeated TaskSnapshot tasks = 7;
+  optional string result_decimal = 8;
+  optional string failure_detail = 9;
+}
+
+// Mandatory semantics are specified in ../A2_CONTRACT_REVIEW.md.
+// No membership, election, replication or task dispatch service is defined here.

@@ -1,5 +1,37 @@
 # CS324 A1 — three-person development project
 
+## A2 work in progress
+
+The user authorized this existing remote for A2 development on 14 October 2026.
+Pre-A2 `main` baseline: `7b339041558adb385a57d92566a908796d701732`.
+Krish's branch is `feature/a2-jobs-client`. The assignment's separate A2 repository
+requirement still needs resolution by the team; retaining this baseline does not
+fulfil that requirement.
+
+No shared A2 Protocol Buffer interfaces exist on the fetched branches. Review
+[the concrete client contract proposal](docs/A2_CONTRACT_REVIEW.md) and
+[proposed proto](docs/proposals/jobs_client.proto) before implementing against it.
+It is not generated or wired into the build. Existing calculations, CSV, GUI and
+headless client remain the A1 implementation described below. gRPC streaming,
+worker breakdown, stable job receipts and recovery are **not yet implemented**.
+
+From the folder containing `pom.xml`, verify Krish's calculation/CSV compatibility:
+
+```powershell
+mvn "-Dtest=IntegerJobEngineTest,JobInputTest,CalculationCompatibilityTest" test
+mvn clean verify -Pintegration
+```
+
+The integration profile exercises the actual legacy RMI cluster with four worker
+and two client processes; it is not A2 gRPC/failure-recovery evidence. Java source
+targets release 21. A runtime check on Java 21 is required if building with a newer
+JDK. The launch commands below run the existing A1 components; there is no working
+A2 gRPC launch command until the shared/server integration is available.
+
+See [A2 assistance record](docs/A2_AI_ASSISTANCE.md) for accurate disclosure and
+verification limits. Keep this unfinished A2 branch out of `main` until contracts
+and integration checks are complete.
+
 Repository: https://github.com/mocenacagiisaia-glitch/CS324_A1
 
 This is an independent development repository, not the completed reference project.
