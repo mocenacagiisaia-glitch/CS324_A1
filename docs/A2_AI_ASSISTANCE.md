@@ -42,3 +42,43 @@ The A2 specification requires a separate report appendix page identifying AI too
 and explaining their use by section/task, plus Git log and member contributions.
 Use this factual record for that page; do not attribute AI-generated work as
 independent student implementation or mock checks as real recovery evidence.
+
+## Independent GUI development continuation
+
+The user explicitly requested independent GUI/progress/monitoring development
+behind a local interface, while keeping the shared proto proposed and main
+unchanged. Codex added the `client/progress` package: JobClient transport boundary,
+validated full JobSnapshot UI model, background JobMonitor, EDT-only
+JobProgressPanel, separate ProgressGui and clearly labeled SimulatedJobClient.
+
+The simulator uses real IntegerJobEngine calculations and credits completed local
+chunks, but runs within one JVM with in-memory records. It does not implement
+gRPC, worker/coordinator failure tolerance, majority replication or durable
+recovery. Its disconnect button only interrupts simulated monitoring streams.
+GUI identities/keys survive interruptions in the session but not process restart.
+
+Added component tests for weighted progress/worker credits, duplicate/older
+snapshots, stale attempts, changed job IDs/conflicting revisions, uncertain
+submission reconciliation without replay, retry exhaustion, key-only resume,
+missing records, permanent failure, stream EOF/cancellation, reconnect status,
+headless EDT view updates and simulation calculations/concurrent jobs/closure.
+These are fixtures/local simulation evidence, not end-to-end A2 recovery evidence.
+
+Updated README with exact simulation launch and focused test commands, and
+A2_CONTRACT_REVIEW.md with method-by-method adapter/server dependencies.
+`docs/proposals/jobs_client.proto` remains unchanged, proposed, outside the
+generated source tree, and unapproved. Teammate production code is unchanged.
+
+Java 21 runtime was not found in checked system/user Java installation locations;
+Maven uses Oracle JDK 24.0.2 targeting release 21. Manual visual/mouse/keyboard
+demonstration, a Java 21 runtime run, actual gRPC wiring, durable receipts and
+distributed A2 integration remain outstanding. This work stays on the feature
+branch until contracts are agreed and actual integration checks pass.
+
+Final verification for this continuation: `mvn clean verify -Pintegration` passed
+49 unit/component/RMI tests and one legacy real-process integration test. After
+adding a regression check for restoring connection status when a reconnect
+returns unchanged progress, `mvn verify -Pintegration` passed 50
+unit/component/RMI tests and one legacy real-process integration test, with zero
+failures/errors/skips. Of the unit tests, 21 cover the new progress components.
+`git diff --check` passed. A fresh fetch still showed main at the pre-A2 baseline.

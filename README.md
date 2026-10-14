@@ -12,8 +12,10 @@ No shared A2 Protocol Buffer interfaces exist on the fetched branches. Review
 [the concrete client contract proposal](docs/A2_CONTRACT_REVIEW.md) and
 [proposed proto](docs/proposals/jobs_client.proto) before implementing against it.
 It is not generated or wired into the build. Existing calculations, CSV, GUI and
-headless client remain the A1 implementation described below. gRPC streaming,
-worker breakdown, stable job receipts and recovery are **not yet implemented**.
+headless client remain the A1 implementation described below. A separate development
+GUI now displays progress, worker breakdown and reconnection status through a local
+client interface. Actual gRPC streaming, durable job receipts and distributed
+recovery are **not yet implemented**.
 
 From the folder containing `pom.xml`, verify Krish's calculation/CSV compatibility:
 
@@ -31,6 +33,45 @@ A2 gRPC launch command until the shared/server integration is available.
 See [A2 assistance record](docs/A2_AI_ASSISTANCE.md) for accurate disclosure and
 verification limits. Keep this unfinished A2 branch out of `main` until contracts
 and integration checks are complete.
+
+### Krish's independent progress GUI
+
+Build and launch the explicitly labeled **development simulation**:
+
+```powershell
+mvn clean verify -Pintegration
+java -cp target/distrilab-team-1.0.0.jar edu.usp.cs324.client.progress.ProgressGui --simulate
+```
+
+Submit MAX/PRIMECOUNT integer lists or PRIMESUM `start,end`, or select a UTF-8 CSV.
+Each job has independent progress and connection status. Click its progress bar
+or activate **Worker breakdown** with the keyboard to inspect credited units per
+simulated worker. For a longer local calculation, try PRIMESUM `1,5000000`, then
+**Simulate stream disconnect**; the monitor retains the same `sim-...` job ID and
+fetches/subscribes again. This is single-process stream-failure simulation, not
+coordinator failover. Progress comes from completed local calculation chunks;
+there are no timer-generated percentages. Fast jobs may finish before intermediate
+updates are rendered, as with real snapshot streams.
+
+After automatic retries are exhausted, **Resume monitoring** reuses the job ID
+or reconciles the original unconfirmed submission key. **Monitor existing job**
+attaches by ID without submitting anything. IDs/keys are retained in memory for
+this GUI session, and simulator records disappear when its process exits. Durable
+receipt storage remains pending agreed idempotency/recovery contracts. Closing
+the GUI interrupts monitors and closes the service away from the EDT; accepted
+remote work is not claimed to be cancelled.
+
+Focused component tests:
+
+```powershell
+mvn "-Dtest=JobMonitorTest,JobSnapshotTest,JobProgressPanelTest,SimulatedJobClientTest" test
+```
+
+`client/progress/JobClient` isolates transport operations. A future agreed gRPC
+adapter must provide discovery, confirmed submit, lookup by submission key,
+lookup by job ID, cancellable full-snapshot streaming, concurrent calls, deadlines
+and channel shutdown. See the exact [adapter/server checklist](docs/A2_CONTRACT_REVIEW.md).
+The old `ClientGui`/`HeadlessClient` remain unchanged for A1 verification.
 
 Repository: https://github.com/mocenacagiisaia-glitch/CS324_A1
 

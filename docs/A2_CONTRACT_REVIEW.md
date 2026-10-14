@@ -92,3 +92,46 @@ majority acknowledgement, stale attempt acceptance and coordinator replacement
 checks require Isaia's and Maanav's actual A2 implementations. Mock/fixture checks
 must be reported as component evidence only. Do not merge incomplete A2 work into
 main solely because the legacy RMI suite passes.
+
+## Independent client implementation (contracts remain proposed)
+
+At the user's request, `client/progress` now provides a local Java interface,
+snapshot model, background monitor, EDT-only progress view and a separate GUI.
+These are development components, not approved Protocol Buffer definitions.
+`SimulatedJobClient` computes real chunks locally but has no network, majority,
+replication, elections or coordinator replacement. Its stream disconnect action
+is explicitly simulated. Tests use scripted fixtures for uncertain admission,
+reconnect, stale/replayed snapshots and temporary unavailability; those fixtures
+are not evidence that the teammates' server implements recovery correctly.
+
+### Exact adapter methods and required server behavior
+
+| Local `JobClient` method | Proposed RPC dependency | Behavior required from owner |
+|---|---|---|
+| `locateCoordinator()` | Isaia: `CoordinatorDirectory.LocateCoordinator` | Refresh authoritative host/port/worker/term identity before each reconnect; unavailable during election or incomplete recovery |
+| `submit(key, input)` | Maanav: `JobService.SubmitJob` | Return stable job ID in committed snapshot only after agreed majority confirmation; validate input; durable deduplication by identical key/input; allocate once |
+| `lookupSubmission(key)` | Maanav: `JobService.LookupSubmission`, backed by Isaia's shared records | Resolve ambiguous admission using the same original key; authoritative NOT_FOUND only after recovery; UNAVAILABLE when quorum/recovery cannot establish absence |
+| `getJob(id)` | Maanav: `JobService.GetJob` | Return latest committed state/result/tasks for the same job ID from recovered records; no replacement job on missing records |
+| `watchJob(id, updates)` | Maanav: `JobService.WatchJob` | Send current full snapshot first, then committed changes; stable IDs/attempts and deduplicated credits; monotonically recovered revisions; defined stream liveness and interruptible cancellation |
+| `close()` | gRPC adapter owned by Krish after agreement | Cancel calls/streams and release channels with bounded shutdown; not a remote job cancellation RPC |
+
+The local model requires every snapshot to include one current entry per stable
+task ID, with fixed work totals. Accepted snapshots must already describe that
+task set. Equal revisions must have identical content. A higher revision may
+increase an attempt but may not regress it or change the stable job/task IDs or
+task sizes. Map task state/attempt/result fields from the agreed proto and reject
+invalid snapshots before rendering. Task-result acceptance/rejection remains
+Maanav's responsibility, not a client-side calculation of server progress.
+
+The monitor sends submit at most once, then only reconciles its key on uncertainty.
+Key-only Resume does not submit again even after NOT_FOUND. Reconnect attempts
+are bounded across each monitoring run. A gRPC adapter must bound unary/discovery
+RPCs (proposed 5-second deadline), implement stream liveness, and translate
+transport unavailable/deadline errors to local Unavailable. Other RPC/input errors
+need truthful error details. Permanent job failure comes from committed FAILED
+state; temporary transport errors never manufacture a permanent failed job.
+
+The GUI keeps IDs/keys in memory only. Durable cross-process receipts, actual
+gRPC wiring, server admission/attempt handling, quorum behavior, and real
+coordinator/worker recovery remain blocked on agreed contracts and teammate
+implementations. The proposal files remain ready for Isaia/Maanav review.
