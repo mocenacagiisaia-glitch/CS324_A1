@@ -41,6 +41,23 @@ class SimulatedJobClientTest {
         assertThrows(JobClient.Unavailable.class, client::locateCoordinator);
         assertThrows(JobClient.Unavailable.class, () -> client.getJob("missing"));
     }
+    @Test @Timeout(10) void simulatedLostReplyCanBeReconciledToOneStableJob() throws Exception {
+        try (var client = new SimulatedJobClient()) {
+            Job input = JobInput.parse(Job.Type.MAX, "-9,42,7");
+            client.loseNextSubmissionReply();
+            var lost = assertThrows(JobClient.Unavailable.class,
+                    () -> client.submit("original-key", input));
+            assertTrue(lost.getMessage().contains("Simulated submission reply lost"));
+            JobSnapshot receipt = client.lookupSubmission("original-key");
+            List<JobSnapshot> seen = new ArrayList<>();
+            client.watchJob(receipt.jobId(), seen::add);
+            assertEquals(BigInteger.valueOf(42), seen.getLast().result());
+            assertEquals(receipt.jobId(), client.lookupSubmission("original-key").jobId());
+            assertEquals(receipt.jobId(), client.submit("original-key", input).jobId());
+            // Injection is one-shot: a new key gets an ordinary reply.
+            assertNotEquals(receipt.jobId(), client.submit("another-key", input).jobId());
+        }
+    }
     @Test @Timeout(10) void concurrentSimulationJobsRemainIndependent() throws Exception {
         try (var client = new SimulatedJobClient(); var pool = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<BigInteger>> jobs = new ArrayList<>();

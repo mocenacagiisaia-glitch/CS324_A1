@@ -70,13 +70,22 @@ public final class ProgressGui extends JFrame {
             Row row = addRow("Existing job " + id, UUID.randomUUID().toString());
             row.start(null, id);
         });
+        JPanel simulationActions = new JPanel();
         if (client instanceof SimulatedJobClient simulation) {
             JButton disconnect = new JButton("Simulate stream disconnect");
             disconnect.addActionListener(event -> simulation.disconnectStreams());
-            resume.add(disconnect);
+            simulationActions.add(disconnect);
+            JButton lostReply = new JButton("Simulate next lost submission reply");
+            lostReply.addActionListener(event -> {
+                simulation.loseNextSubmissionReply();
+                inputStatus.setText("SIMULATION: next submission reply will be lost; reconciliation will use its original key");
+            });
+            simulationActions.add(lostReply);
         }
         JPanel controls = new JPanel(new GridLayout(0, 1));
-        controls.add(actions); controls.add(resume); controls.add(inputStatus);
+        controls.add(actions); controls.add(resume);
+        if (client instanceof SimulatedJobClient) controls.add(simulationActions);
+        controls.add(inputStatus);
         editor.add(controls, BorderLayout.SOUTH);
         jobs.setLayout(new BoxLayout(jobs, BoxLayout.Y_AXIS));
         add(editor, BorderLayout.NORTH); add(new JScrollPane(jobs), BorderLayout.CENTER);

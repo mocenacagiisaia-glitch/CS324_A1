@@ -19,6 +19,7 @@ public final class SimulatedJobClient implements JobClient {
     private final ExecutorService calculations = Executors.newVirtualThreadPerTaskExecutor();
     private final IntegerJobEngine engine = new IntegerJobEngine();
     private long streamGeneration;
+    private boolean loseNextSubmissionReply;
     private boolean closed;
 
     private void available() throws Unavailable {
@@ -48,6 +49,10 @@ public final class SimulatedJobClient implements JobClient {
                 total, 0, tasks, null, null));
         keys.put(key, entry); jobs.put(id, entry);
         calculations.submit(() -> calculate(entry, parts));
+        if (loseNextSubmissionReply) {
+            loseNextSubmissionReply = false;
+            throw new Unavailable("Simulated submission reply lost after local admission");
+        }
         return entry.snapshot;
     }
     private void calculate(Entry entry, List<Job> parts) {
@@ -118,6 +123,7 @@ public final class SimulatedJobClient implements JobClient {
         }
     }
     public synchronized void disconnectStreams() { streamGeneration++; notifyAll(); }
+    public synchronized void loseNextSubmissionReply() { loseNextSubmissionReply = true; }
     @Override public synchronized void close() {
         closed = true;
         notifyAll();

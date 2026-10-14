@@ -82,3 +82,33 @@ returns unchanged progress, `mvn verify -Pintegration` passed 50
 unit/component/RMI tests and one legacy real-process integration test, with zero
 failures/errors/skips. Of the unit tests, 21 cover the new progress components.
 `git diff --check` passed. A fresh fetch still showed main at the pre-A2 baseline.
+
+## Runtime and desktop verification continuation
+
+Continued from `8c210c9` at the user's request. Checked installed runtimes in
+system/user vendor directories, PATH and JavaSoft registry: Oracle JDK 24.0.2 and
+an older Java 8 runtime were found, but Java 21 was not available in those locations.
+No runtime installation or change to the release-21 target was performed.
+
+Codex launched the actual ProgressGui simulation entry point from a temporary
+Java Robot probe. The simulation window was created with its development title,
+but physical keyboard input did not reach it. Screen capture showed only the
+desktop background; the initial probe timed out, and the follow-up probe was
+stopped. No visual, mouse/keyboard, worker-dialog, responsiveness or end-to-end
+GUI interaction check is claimed to have passed. The failed temporary probe was
+removed instead of shipping it as a passing test. Added A2_GUI_VERIFICATION.md
+with a short manual checklist, exact Java 21 setup instructions and separate
+Isaia/Maanav dependencies.
+
+Added a clearly labeled one-shot lost-submission-reply simulation control so
+uncertain-admission reconciliation can be exercised manually. Moved simulation
+controls onto a separate GUI row to avoid crowding existing-ID controls. Added a
+simulator component test for lost-reply lookup, stable ID, result and one-shot
+injection. All of this remains local simulation, not gRPC or distributed recovery
+evidence. The proto and contract review remain proposed and unapproved.
+
+Final verification: `mvn clean verify -Pintegration` passed 51
+unit/component/RMI tests (including 22 progress/simulator component tests) and one
+legacy separate-process RMI integration test, with zero failures/errors/skips,
+on Oracle JDK 24.0.2 targeting release 21. No actual Java 21 runtime or A2 recovery
+verification is claimed. `git diff --check` passed before commit.

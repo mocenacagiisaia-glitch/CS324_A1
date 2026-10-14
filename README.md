@@ -53,6 +53,12 @@ coordinator failover. Progress comes from completed local calculation chunks;
 there are no timer-generated percentages. Fast jobs may finish before intermediate
 updates are rendered, as with real snapshot streams.
 
+To exercise uncertain admission, click **Simulate next lost submission reply**,
+then submit a new job. The local simulator stores the job/key but deliberately
+loses that one reply; monitoring reconciles the original key instead of submitting
+again. Simulation controls use a separate row so the existing-ID controls retain
+space. See the short [manual GUI checklist and actual desktop findings](docs/A2_GUI_VERIFICATION.md).
+
 After automatic retries are exhausted, **Resume monitoring** reuses the job ID
 or reconciles the original unconfirmed submission key. **Monitor existing job**
 attaches by ID without submitting anything. IDs/keys are retained in memory for
